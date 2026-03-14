@@ -1,4 +1,4 @@
-name,version,name,wmc,dit,noc,cbo,rfc,lcom,ca,ce,npm,lcom3,loc,dam,moa,mfa,cam,ic,cbm,amc,max_cc,avg_cc,bug
+name,version,classname,wmc,dit,noc,cbo,rfc,lcom,ca,ce,npm,lcom3,loc,dam,moa,mfa,cam,ic,cbm,amc,max_cc,avg_cc,bug
 poi,2.0RC1,org.apache.poi.hssf.record.SSTDeserializer,23,1,0,5,46,123,1,4,4,0.659090909,668,1,1,0,0.267080745,0,0,27.60869565,8,2.3043,0
 poi,2.0RC1,org.apache.poi.hssf.record.BottomMarginRecord,12,2,0,6,23,46,2,4,10,0.818181818,122,0.5,0,0.55,0.4,1,6,9,2,0.8333,0
 poi,2.0RC1,org.apache.poi.hssf.record.MergeCellsRecord,15,2,0,6,35,41,3,4,13,0.69047619,363,0.666666667,0,0.47826087,0.516666667,1,6,23,2,1.1333,0

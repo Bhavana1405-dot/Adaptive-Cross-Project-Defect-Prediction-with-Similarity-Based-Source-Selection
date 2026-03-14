@@ -1,4 +1,4 @@
-name,version,name,wmc,dit,noc,cbo,rfc,lcom,ca,ce,npm,lcom3,loc,dam,moa,mfa,cam,ic,cbm,amc,max_cc,avg_cc,bug
+name,version,classname,wmc,dit,noc,cbo,rfc,lcom,ca,ce,npm,lcom3,loc,dam,moa,mfa,cam,ic,cbm,amc,max_cc,avg_cc,bug
 poi,2.5.1,org.apache.poi.hssf.record.ValueRangeRecord,40,2,0,6,60,90,1,5,38,0.838141026,786,0.9375,9,0.229166667,0.275,1,6,18.25,2,0.95,1
 poi,2.5.1,org.apache.poi.ddf.EscherRecord,20,1,14,32,36,164,31,4,18,0.842105263,141,1,0,0,0.2375,0,0,5.95,2,1.05,0
 poi,2.5.1,org.apache.poi.hssf.usermodel.HSSFRow,24,1,0,9,52,86,4,5,16,0.673913043,451,0.833333333,3,0,0.183333333,0,0,17.54166667,5,1.7083,1

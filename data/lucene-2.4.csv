@@ -1,4 +1,4 @@
-name,version,name,wmc,dit,noc,cbo,rfc,lcom,ca,ce,npm,lcom3,loc,dam,moa,mfa,cam,ic,cbm,amc,max_cc,avg_cc,bug
+name,version,classname,wmc,dit,noc,cbo,rfc,lcom,ca,ce,npm,lcom3,loc,dam,moa,mfa,cam,ic,cbm,amc,max_cc,avg_cc,bug
 lucene,2.4,org.apache.lucene.index.DocInverterPerThread,5,2,0,19,18,0,8,15,4,0.785714286,84,0,7,0.5,0.4,0,0,14.4,3,1.2,1
 lucene,2.4,org.apache.lucene.search.FuzzyQuery,10,3,0,13,41,7,1,12,9,0.638888889,286,0.5,0,0.72,0.285714286,2,6,27.2,6,1.4,1
 lucene,2.4,org.apache.lucene.search.QueryTermVector,10,1,0,4,38,0,0,4,9,0.388888889,287,1,0,0,0.34,0,0,27.5,5,1.6,0

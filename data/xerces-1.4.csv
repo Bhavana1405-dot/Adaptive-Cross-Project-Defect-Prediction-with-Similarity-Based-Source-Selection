@@ -1,4 +1,4 @@
-name,version,name,wmc,dit,noc,cbo,rfc,lcom,ca,ce,npm,lcom3,loc,dam,moa,mfa,cam,ic,cbm,amc,max_cc,avg_cc,bug
+name,version,classname,wmc,dit,noc,cbo,rfc,lcom,ca,ce,npm,lcom3,loc,dam,moa,mfa,cam,ic,cbm,amc,max_cc,avg_cc,bug
 xerces,1.4.4,org.apache.xerces.impl.xs.traversers.XSAttributeChecker,12,1,0,35,75,14,16,21,7,0.965786901,4202,0.559139785,19,0,0.20979021,0,0,341.4166667,31,6.6667,1
 xerces,1.4.4,org.apache.xerces.impl.dv.xs.DateTimeDatatypeValidator,3,4,0,6,12,3,2,4,2,2,68,0,0,0.985714286,0.428571429,1,7,21.66666667,1,0.3333,1
 xerces,1.4.4,org.apache.html.dom.HTMLOptGroupElementImpl,5,4,0,2,11,10,0,2,5,2,30,0,0,0.959183673,0.45,0,0,5,1,0.8,1

@@ -1,4 +1,4 @@
-name,version,name,wmc,dit,noc,cbo,rfc,lcom,ca,ce,npm,lcom3,loc,dam,moa,mfa,cam,ic,cbm,amc,max_cc,avg_cc,bug
+name,version,classname,wmc,dit,noc,cbo,rfc,lcom,ca,ce,npm,lcom3,loc,dam,moa,mfa,cam,ic,cbm,amc,max_cc,avg_cc,bug
 ivy,1.1,fr.jayasoft.ivy.LatestStrategy,2,1,0,8,2,1,7,1,2,2,2,0,0,0,0.666666667,0,0,0,1,1,0
 ivy,1.1,fr.jayasoft.ivy.DefaultDependencyDescriptor,23,1,0,7,52,171,2,5,20,0.837662338,420,1,2,0,0.25,0,0,16.95652174,4,1.4348,1
 ivy,1.1,fr.jayasoft.ivy.url.URLHandler,4,1,0,10,4,6,9,1,4,2,4,0,0,0,0.55,0,0,0,1,1,1

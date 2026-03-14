@@ -1,4 +1,4 @@
-name,version,name,wmc,dit,noc,cbo,rfc,lcom,ca,ce,npm,lcom3,loc,dam,moa,mfa,cam,ic,cbm,amc,max_cc,avg_cc,bug
+name,version,classname,wmc,dit,noc,cbo,rfc,lcom,ca,ce,npm,lcom3,loc,dam,moa,mfa,cam,ic,cbm,amc,max_cc,avg_cc,bug
 lucene,2,org.apache.lucene.analysis.WhitespaceAnalyzer,2,2,0,3,4,1,0,3,2,2,10,0,0,0.666666667,0.666666667,0,0,4,1,0.5,0
 lucene,2,org.apache.lucene.search.QueryTermVector,10,1,0,4,37,0,0,4,9,0.388888889,278,1,0,0,0.34,0,0,26.6,5,1.6,0
 lucene,2,org.apache.lucene.analysis.PorterStemmer,27,1,0,1,43,13,1,0,13,0.600961538,1174,1,0,0,0.25308642,0,0,42.18518519,26,5.7407,0
