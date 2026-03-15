@@ -125,9 +125,12 @@ Stage 5  Stacked ensemble     RF + HGB×2 + TorchMLP (GPU) → Logistic Regressi
 |--------|---------------------------|--------------|
 | Source selection | Uses all 9 projects | Top-K filtered by 4-signal similarity score |
 | Domain adaptation | LPP (needs 10% target labels) | CORAL (zero target labels needed) |
-| Classifier | Nearest-centroid | Stacked ensemble: RF + HGB×2 + MLP |
+| Classifier | Nearest-centroid | Stacked ensemble: RF + HGB×2 + XGBoost + MLP |
 | GPU support | None | PyTorch MLP uses CUDA on Windows (RTX 4050) |
-| Imbalance | Basic oversampling | SMOTE with adaptive k-neighbours |
+| Imbalance | Basic oversampling | SMOTE + class_weight='balanced' on all learners |
+| Calibration | None | Platt scaling on meta-learner probabilities |
+| Threshold | Fixed 0.5 | Two-pass F1-optimal threshold search |
+| Stat. validation | Wilcoxon + Cliff's δ | Built-in per-project comparison with tests |
 
 ### What each file does
 
@@ -147,7 +150,7 @@ Stage 5  Stacked ensemble     RF + HGB×2 + TorchMLP (GPU) → Logistic Regressi
 
 **`smote.py`** — Stage 4. Generates synthetic defective-class samples by interpolating between real minority-class instances and their K nearest neighbours: `x_new = x_i + λ·(x_nn − x_i)`. Applied only after the train/test split — test data is never touched.
 
-**`ensemble.py`** — Stage 5. Trains Random Forest, two HistGradientBoosting variants, and a PyTorch MLP as base learners using 3-fold OOF predictions to generate unbiased meta-features, then trains a Logistic Regression meta-learner on top. The MLP automatically uses CUDA GPU on Windows if torch is installed.
+**`ensemble.py`** — Stage 5. Trains Random Forest, two HistGradientBoosting variants, XGBoost, and a PyTorch MLP as base learners using OOF predictions to generate unbiased meta-features, then trains a calibrated Logistic Regression meta-learner with class_weight='balanced'. Includes two-pass F1-optimal threshold search and optional focal loss for the MLP. The MLP automatically uses CUDA GPU on Windows if torch is installed.
 
 **`smoke_test.py`** — runs all 5 stages on small synthetic data and prints a pass/fail for each. Run this first after any code change.
 
@@ -237,6 +240,17 @@ Saved to results.csv
 | `--graphsage_epochs` | `100` | GraphSAGE training epochs |
 | `--cache_dir` | `embeddings/` | Where to store precomputed .npy embedding files |
 | `--out` | `results.csv` | Output path for results table |
+| `--target_label_ratio` | `0.10` | Fraction of target data used as labeled guide |
+| `--n_folds` | `5` | OOF folds for stacked ensemble |
+| `--coral_reg` | `1e-3` | CORAL covariance regularization |
+| `--smote_strategy` | `auto` | `auto` for full balance, or float like `0.5` / `0.7` |
+| `--w_cos` | `0.40` | Cosine similarity weight in source selection |
+| `--w_mmd` | `0.35` | MMD weight in source selection |
+| `--w_adist` | `0.15` | A-Distance weight in source selection |
+| `--w_dr` | `0.10` | Defect-rate similarity weight |
+| `--grid_search` | off | Run hyperparameter grid search |
+| `--grid_target` | None | Target for grid search (default: all projects) |
+| `--grid_trials` | `10` | Trials per config during grid search |
 
 ### Feature modes
 
@@ -253,13 +267,13 @@ Saved to results.csv
 |-----------|---------|-------------|
 | `top_k` | 3 | Number of source projects selected per trial |
 | `target_label_ratio` | 0.10 | Fraction of target used as labeled guide — matches base paper |
-| `w_cos / w_mmd` | 0.35 each | Cosine and MMD weights in source selection |
-| `w_adist / w_defect_rate` | 0.15 each | A-Distance and defect-rate weights |
-| `CORAL reg` | 1e-3 | Regularisation added to covariance matrices |
+| `w_cos / w_mmd` | 0.40, 0.35 | Cosine and MMD weights in source selection |
+| `w_adist / w_dr` | 0.15, 0.10 | A-Distance and defect-rate weights |
+| `CORAL reg` | 1e-3 | Regularisation added to covariance matrices (try 1e-2/1e-4) |
 | `SMOTE k` | 5 | Nearest neighbours for synthetic sample generation |
-| `n_folds` | 3 | OOF folds for stacked ensemble (3=fast, 5=more accurate) |
-| `MLP hidden_dim` | 128 | PyTorch MLP hidden layer size |
-| `MLP epochs` | 50 | PyTorch MLP training epochs |
+| `n_folds` | 5 | OOF folds for stacked ensemble |
+| `MLP hidden_dim` | 256 | PyTorch MLP hidden layer size |
+| `MLP epochs` | 80 | PyTorch MLP training epochs |
 
 ---
 
@@ -287,13 +301,21 @@ Best gains expected on **log4j** (92% defect rate, extreme imbalance) and **jedi
 
 ## Statistical Validation
 
-To match the base paper's validation protocol exactly, report across 30 trials:
+The pipeline automatically runs the following statistical tests after a full benchmark:
 
-- **Wilcoxon signed-rank test** — p < 0.05 confirms statistically significant difference between methods
-- **Cliff's δ** — effect size: negligible (<0.147) / small / medium / large (>0.474)
-- **Scott-Knott ESD test** — hierarchical clustering to rank all methods into statistically distinct groups
+- **Wilcoxon signed-rank test** — p < 0.05 confirms statistically significant difference vs base paper
+- **Cliff's δ** — effect size: negligible (<0.147) / small (<0.33) / medium (<0.474) / large (≥0.474)
+- **Per-project F1 comparison** — shows which target projects help/hurt the average vs TriStage-CPDP Table 5
 
-These three tests are used in the base paper's Tables 5, 6, and 7 and allow direct side-by-side comparison.
+These match the base paper's Tables 5, 6, and 7 validation protocol. Run with `--trials 30` for reliable statistics.
+
+### Hyperparameter grid search
+
+```bash
+python src_new/pipeline.py --grid_search --grid_target ant --grid_trials 10
+```
+
+Sweeps over `top_k=[3,5,7]`, `coral_reg=[1e-4,1e-3,1e-2]`, `smote_strategy=[auto,0.5,0.7]`, `n_folds=[3,5]`. Results saved to `grid_results.csv`.
 
 ---
 
