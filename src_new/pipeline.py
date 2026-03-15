@@ -401,6 +401,14 @@ def main():
     parser.add_argument('--smote_strategy',   default='auto',
         help="'auto' for full balance, or float like 0.5 / 0.7")
 
+    # Grid search
+    parser.add_argument('--grid_search',      action='store_true',
+        help='Run grid search over key hyperparameters')
+    parser.add_argument('--grid_target',      default=None,
+        help='Target project for grid search (default: use all)')
+    parser.add_argument('--grid_trials',      type=int, default=10,
+        help='Trials per config during grid search (fewer for speed)')
+
     args = parser.parse_args()
 
     trial_kwargs = dict(
@@ -416,6 +424,44 @@ def main():
         args.data_dir, args.src_root, args.feature_mode,
         args.cache_dir, args.graphsage_epochs)
     print(f"\nProjects: {list(all_projects.keys())}")
+
+    if args.grid_search:
+        from itertools import product
+        grid = {
+            'top_k':          [3, 5, 7],
+            'coral_reg':      [1e-4, 1e-3, 1e-2],
+            'smote_strategy': ['auto', '0.5', '0.7'],
+            'n_folds':        [3, 5],
+        }
+        keys = list(grid.keys())
+        combos = list(product(*grid.values()))
+        targets = [args.grid_target] if args.grid_target else sorted(all_projects.keys())
+
+        print(f"\nGrid search: {len(combos)} configs x {len(targets)} targets "
+              f"x {args.grid_trials} trials")
+        grid_rows = []
+        best_f1, best_cfg = 0.0, None
+
+        for combo in combos:
+            cfg = dict(zip(keys, combo))
+            kw = {**trial_kwargs, **cfg}
+            f1_all = []
+            for tgt in targets:
+                res = evaluate_target(tgt, all_projects,
+                                      cfg['top_k'], args.grid_trials, **kw)
+                f1_all.append(res['f1_mean'])
+            avg_f1 = np.mean(f1_all)
+            grid_rows.append({**cfg, 'avg_f1': avg_f1})
+            if avg_f1 > best_f1:
+                best_f1 = avg_f1
+                best_cfg = cfg
+            print(f"  {cfg} -> avg F1={avg_f1:.3f}")
+
+        grid_df = pd.DataFrame(grid_rows).sort_values('avg_f1', ascending=False)
+        grid_df.to_csv('grid_results.csv', index=False)
+        print(f"\nBest config (F1={best_f1:.3f}): {best_cfg}")
+        print("Grid results saved to grid_results.csv")
+        return
 
     if args.target:
         if args.target not in all_projects:
