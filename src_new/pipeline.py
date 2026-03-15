@@ -26,6 +26,7 @@ import sys
 import argparse
 import numpy as np
 import pandas as pd
+from scipy import stats
 from sklearn.metrics import f1_score, roc_auc_score, matthews_corrcoef
 from sklearn.preprocessing import StandardScaler
 
@@ -290,6 +291,80 @@ def run_full_benchmark(data_dir, src_root=None, feature_mode='metrics',
 
 
 # ─────────────────────────────────────────────────────────────
+# Statistical Tests
+# ─────────────────────────────────────────────────────────────
+PAPER_F1 = {
+    'ant': 0.632, 'camel-1.0': 0.472, 'camel-1.2': 0.496,
+    'camel-1.4': 0.481, 'camel-1.6': 0.517, 'ivy-1.1': 0.604,
+    'ivy-1.4': 0.377, 'ivy-2.0': 0.547, 'log4j-1.0': 0.557,
+    'log4j-1.1': 0.620, 'log4j-1.2': 0.831, 'lucene-2.0': 0.667,
+    'lucene-2.2': 0.665, 'lucene-2.4': 0.693, 'poi-1.5': 0.718,
+    'poi-2.0': 0.501, 'poi-2.5': 0.757, 'poi-3.0': 0.791,
+    'xalan-2.4': 0.463, 'xalan-2.5': 0.592, 'xalan-2.6': 0.701,
+    'xalan-2.7': 0.793, 'xerces-1.2': 0.393, 'xerces-1.3': 0.502,
+    'xerces-1.4': 0.903,
+}
+
+
+def cliffs_delta(x, y):
+    """Cliff's delta effect size between two samples."""
+    n_x, n_y = len(x), len(y)
+    if n_x == 0 or n_y == 0:
+        return 0.0, 'negligible'
+    more = sum(1 for xi in x for yi in y if xi > yi)
+    less = sum(1 for xi in x for yi in y if xi < yi)
+    d = (more - less) / (n_x * n_y)
+    abs_d = abs(d)
+    if abs_d < 0.147:
+        level = 'negligible'
+    elif abs_d < 0.33:
+        level = 'small'
+    elif abs_d < 0.474:
+        level = 'medium'
+    else:
+        level = 'large'
+    return d, level
+
+
+def print_statistical_comparison(df):
+    """Print per-project comparison and statistical tests vs base paper."""
+    print("\n" + "="*70)
+    print("PER-PROJECT F1 COMPARISON VS TRISTAGE-CPDP")
+    print("="*70)
+    print(f"{'Project':<18} {'Ours':>8} {'Paper':>8} {'Diff':>8} {'Status':>8}")
+    print("-" * 52)
+
+    our_vals = []
+    paper_vals = []
+    for _, row in df.iterrows():
+        proj = row['project']
+        ours = row['f1_mean']
+        paper = PAPER_F1.get(proj, None)
+        if paper is None:
+            continue
+        our_vals.append(ours)
+        paper_vals.append(paper)
+        diff = ours - paper
+        status = '+' if diff >= 0 else '-'
+        print(f"{proj:<18} {ours:>8.3f} {paper:>8.3f} {diff:>+8.3f} {status:>8}")
+
+    our_arr = np.array(our_vals)
+    paper_arr = np.array(paper_vals)
+
+    if len(our_arr) >= 5:
+        try:
+            w_stat, p_val = stats.wilcoxon(our_arr, paper_arr)
+        except ValueError:
+            w_stat, p_val = 0.0, 1.0
+        d, level = cliffs_delta(our_arr.tolist(), paper_arr.tolist())
+
+        print(f"\n  Wilcoxon signed-rank: W={w_stat:.1f}, p={p_val:.4f}"
+              f" {'(significant)' if p_val < 0.05 else '(not significant)'}")
+        print(f"  Cliff's delta: d={d:.3f} ({level})")
+        print(f"  Mean diff:  F1={np.mean(our_arr - paper_arr):+.3f}")
+
+
+# ─────────────────────────────────────────────────────────────
 # Entry Point
 # ─────────────────────────────────────────────────────────────
 def main():
@@ -374,6 +449,8 @@ def main():
             d = (our[m] - baseline[m]) / baseline[m] * 100
             print(f"  {m.upper()}: Ours={our[m]:.3f}  Paper={baseline[m]:.3f}  "
                   f"{'▲' if d>0 else '▼'}{abs(d):.1f}%")
+
+        print_statistical_comparison(df)
 
         df.to_csv(args.out, index=False)
         print(f"\nSaved to {args.out}")
