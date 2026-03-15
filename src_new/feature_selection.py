@@ -65,7 +65,7 @@ class LASSOREFSelector:
 
         # ── Step 2: RFE on LASSO survivors ──
         n_rfe_target = self.max_features if self.max_features else max(
-            self.min_features, X_lasso.shape[1] // 2)
+            self.min_features, int(X_lasso.shape[1] * 0.7))
         n_rfe_target = min(n_rfe_target, X_lasso.shape[1])
 
         rf = RandomForestClassifier(n_estimators=100, random_state=self.rs,

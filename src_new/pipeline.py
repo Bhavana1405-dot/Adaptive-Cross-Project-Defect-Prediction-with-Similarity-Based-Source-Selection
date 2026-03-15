@@ -177,7 +177,7 @@ def run_trial(target_name, target_X, target_y, all_projects,
 
     # Stage 2: Feature Selection
     n_feats = X_source.shape[1]
-    fs = LASSOREFSelector(min_features=max(5, n_feats // 4), random_state=seed)
+    fs = LASSOREFSelector(min_features=max(3, n_feats // 5), random_state=seed)
     X_src_sel  = fs.fit_transform(X_source, y_source)
     X_tgt_sel  = fs.transform(X_tgt_lab)
     X_test_sel = fs.transform(X_test)
