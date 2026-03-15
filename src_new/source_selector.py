@@ -71,16 +71,17 @@ class SimilaritySourceSelector:
     ----------
     top_k         : int   – number of source projects to select (None = adaptive)
     threshold     : float – min score to include a source (used when top_k=None)
-    w_cos, w_mmd, w_adist : float – weights for each similarity component
+    w_cos, w_mmd, w_adist, w_dr : float – weights for each similarity component
     """
 
     def __init__(self, top_k=3, threshold=0.4,
-                 w_cos=0.4, w_mmd=0.4, w_adist=0.2):
+                 w_cos=0.4, w_mmd=0.35, w_adist=0.15, w_dr=0.10):
         self.top_k = top_k
         self.threshold = threshold
         self.w_cos = w_cos
         self.w_mmd = w_mmd
         self.w_adist = w_adist
+        self.w_dr = w_dr
 
     def _project_vector(self, X: np.ndarray) -> np.ndarray:
         """Project-level centroid representation."""
@@ -138,7 +139,6 @@ class SimilaritySourceSelector:
         mmd_max   = mmd_vals.max()   if mmd_vals.max()   > 0 else 1.0
         adist_max = adist_vals.max() if adist_vals.max() > 0 else 1.0
 
-        # Weights: cos=0.35, mmd=0.35, adist=0.15, defect_rate=0.15
         scored = {}
         for name, v in raw.items():
             cos_sim   = v['cos']
@@ -146,10 +146,10 @@ class SimilaritySourceSelector:
             adist_sim = 1.0 - v['adist'] / adist_max
             dr_sim    = v['dr']
 
-            score = (0.35 * cos_sim  +
-                     0.35 * mmd_sim  +
-                     0.15 * adist_sim +
-                     0.15 * dr_sim)
+            score = (self.w_cos   * cos_sim  +
+                     self.w_mmd   * mmd_sim  +
+                     self.w_adist * adist_sim +
+                     self.w_dr    * dr_sim)
             scored[name] = score
 
         ranked = sorted(scored.items(), key=lambda x: x[1], reverse=True)
