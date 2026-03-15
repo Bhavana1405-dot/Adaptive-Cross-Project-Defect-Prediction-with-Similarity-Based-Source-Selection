@@ -196,9 +196,15 @@ def run_trial(target_name, target_X, target_y, all_projects,
     y_train = np.concatenate([y_source, y_tgt_lab])
 
     # Stage 4: SMOTE
-    k_smote = max(1, min(5, np.bincount(y_train).min() - 1))
+    # Adaptive SMOTE: for very imbalanced datasets (defect rate < 20%)
+    # oversample to 40% minority instead of 50% to avoid over-synthesis
+    counts = np.bincount(y_train)
+    defect_rate = counts[1] / counts.sum() if len(counts) > 1 else 0.5
+    smote_strategy = 'auto' if defect_rate >= 0.20 else 0.6
+    k_smote = max(1, min(5, counts.min() - 1))
     X_bal, y_bal = SMOTE(
-        k_neighbors=k_smote, random_state=seed).fit_resample(X_train, y_train)
+        k_neighbors=k_smote, random_state=seed,
+        sampling_strategy=smote_strategy).fit_resample(X_train, y_train)
 
     # Stage 5: Stacked Ensemble
     n_folds = max(2, min(5, np.bincount(y_bal).min()))
