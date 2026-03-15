@@ -15,6 +15,7 @@ Meta-learner:
 """
 
 import numpy as np
+from sklearn.calibration import CalibratedClassifierCV
 from sklearn.ensemble import RandomForestClassifier, HistGradientBoostingClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import StratifiedKFold
@@ -155,9 +156,10 @@ class StackedEnsemble:
     random_state: int
     """
 
-    def __init__(self, n_folds=3, random_state=42):
-        self.n_folds = n_folds
-        self.rs      = random_state
+    def __init__(self, n_folds=3, random_state=42, calibrate=True):
+        self.n_folds   = n_folds
+        self.rs        = random_state
+        self.calibrate = calibrate
 
         # Check if torch+CUDA is available once at init
         self._gpu_info = self._check_gpu()
@@ -235,10 +237,16 @@ class StackedEnsemble:
                     c.fit(X_tr, y_tr)
                 meta_X[val_idx, i] = c.predict_proba(X_val)[:, 1]
 
-        self.meta_learner.fit(meta_X, y)
+        if self.calibrate and len(np.unique(y)) == 2:
+            cal_meta = CalibratedClassifierCV(
+                self.meta_learner, method='sigmoid', cv=3)
+            cal_meta.fit(meta_X, y)
+            self.meta_learner_ = cal_meta
+        else:
+            self.meta_learner.fit(meta_X, y)
+            self.meta_learner_ = self.meta_learner
 
-        # Find optimal threshold on OOF predictions instead of using 0.5
-        meta_probs = self.meta_learner.predict_proba(meta_X)[:, 1]
+        meta_probs = self.meta_learner_.predict_proba(meta_X)[:, 1]
         self.threshold_ = self._find_best_threshold(meta_probs, y)
 
         self._fitted_base = []
@@ -266,7 +274,7 @@ class StackedEnsemble:
             clf.predict_proba(X)[:, 1]
             for clf in self._fitted_base
         ])
-        return self.meta_learner.predict_proba(meta_X)
+        return self.meta_learner_.predict_proba(meta_X)
 
     def predict(self, X):
         threshold = getattr(self, 'threshold_', 0.5)
