@@ -35,15 +35,16 @@ class TorchMLP:
     Install: pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
     """
 
-    def __init__(self, hidden_dim=128, epochs=50, lr=1e-3,
-                 batch_size=64, random_state=42):
-        self.hidden_dim   = hidden_dim
-        self.epochs       = epochs
-        self.lr           = lr
-        self.batch_size   = batch_size
-        self.random_state = random_state
-        self.model_       = None
-        self.device_      = None
+    def __init__(self, hidden_dim=256, epochs=80, lr=1e-3,
+                 batch_size=64, use_focal_loss=False, random_state=42):
+        self.hidden_dim     = hidden_dim
+        self.epochs         = epochs
+        self.lr             = lr
+        self.batch_size     = batch_size
+        self.use_focal_loss = use_focal_loss
+        self.random_state   = random_state
+        self.model_         = None
+        self.device_        = None
 
     def _build_model(self, in_dim):
         try:
@@ -52,17 +53,17 @@ class TorchMLP:
             torch.manual_seed(self.random_state)
 
             device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+            h2 = self.hidden_dim // 2
             model  = nn.Sequential(
                 nn.Linear(in_dim, self.hidden_dim),
                 nn.LayerNorm(self.hidden_dim),
                 nn.ReLU(),
                 nn.Dropout(0.3),
-                nn.Linear(self.hidden_dim, self.hidden_dim // 2),
-                nn.LayerNorm(self.hidden_dim // 2),
+                nn.Linear(self.hidden_dim, h2),
+                nn.LayerNorm(h2),
                 nn.ReLU(),
                 nn.Dropout(0.2),
-                nn.Linear(self.hidden_dim // 2, 1)
-                # No Sigmoid — BCEWithLogitsLoss applies it internally
+                nn.Linear(h2, 1)
             ).to(device)
             return model, device, torch
         except ImportError:
@@ -82,11 +83,20 @@ class TorchMLP:
         X_t = torch.FloatTensor(X).to(device)
         y_t = torch.FloatTensor(y.astype(float)).unsqueeze(1).to(device)
 
-        # Class-weighted loss for imbalanced data
         pos_weight = torch.tensor(
             [(y == 0).sum() / max((y == 1).sum(), 1)],
             dtype=torch.float32).to(device)
-        criterion  = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
+
+        if self.use_focal_loss:
+            bce = nn.BCEWithLogitsLoss(pos_weight=pos_weight, reduction='none')
+            focal_gamma = 2.0
+            def criterion(logits, targets):
+                bce_loss = bce(logits, targets)
+                probs = torch.sigmoid(logits)
+                p_t = targets * probs + (1 - targets) * (1 - probs)
+                return (((1 - p_t) ** focal_gamma) * bce_loss).mean()
+        else:
+            criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
         optimizer  = torch.optim.Adam(model.parameters(), lr=self.lr,
                                       weight_decay=1e-4)
         scheduler  = torch.optim.lr_scheduler.StepLR(
@@ -127,6 +137,7 @@ class TorchMLP:
     def get_params(self, deep=True):
         return dict(hidden_dim=self.hidden_dim, epochs=self.epochs,
                     lr=self.lr, batch_size=self.batch_size,
+                    use_focal_loss=self.use_focal_loss,
                     random_state=self.random_state)
 
     def __class_getitem__(cls, item):
@@ -168,7 +179,7 @@ class StackedEnsemble:
                          colsample_bytree=0.8, use_label_encoder=False,
                          eval_metric='logloss', verbosity=0,
                          n_jobs=-1, random_state=random_state)),
-            ('mlp',  TorchMLP(hidden_dim=128, epochs=50,
+            ('mlp',  TorchMLP(hidden_dim=256, epochs=80,
                                random_state=random_state)),
         ]
 
