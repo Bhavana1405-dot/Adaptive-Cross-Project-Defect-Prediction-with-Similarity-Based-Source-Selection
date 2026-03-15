@@ -237,16 +237,31 @@ class StackedEnsemble:
 
     @staticmethod
     def _find_best_threshold(y_prob, y_true, beta=1.0):
-        from sklearn.metrics import f1_score
+        from sklearn.metrics import fbeta_score
         best_t, best_f = 0.5, 0.0
-        for t in np.arange(0.1, 0.90, 0.02):
+
+        # Coarse pass: scan full range with step=0.05
+        for t in np.arange(0.05, 0.96, 0.05):
             y_pred = (y_prob >= t).astype(int)
             if y_pred.sum() == 0:
                 continue
-            f = f1_score(y_true, y_pred, zero_division=0)
+            f = fbeta_score(y_true, y_pred, beta=beta, zero_division=0)
             if f > best_f:
                 best_f = f
                 best_t = t
+
+        # Fine pass: refine around best coarse threshold with step=0.005
+        lo = max(0.01, best_t - 0.06)
+        hi = min(0.99, best_t + 0.06)
+        for t in np.arange(lo, hi, 0.005):
+            y_pred = (y_prob >= t).astype(int)
+            if y_pred.sum() == 0:
+                continue
+            f = fbeta_score(y_true, y_pred, beta=beta, zero_division=0)
+            if f > best_f:
+                best_f = f
+                best_t = t
+
         return float(best_t)
 
     # ─────────────────────────────
