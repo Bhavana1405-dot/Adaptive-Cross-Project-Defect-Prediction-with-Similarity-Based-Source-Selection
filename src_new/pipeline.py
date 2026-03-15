@@ -141,10 +141,12 @@ def load_all_projects(data_dir: str,
 # Single Trial
 # ─────────────────────────────────────────────────────────────
 def run_trial(target_name, target_X, target_y, all_projects,
-              top_k=3, target_label_ratio=0.10, seed=42):
+              top_k=3, target_label_ratio=0.10, seed=42,
+              coral_reg=1e-3, smote_strategy='auto', n_folds=5,
+              w_cos=0.4, w_mmd=0.35, w_adist=0.15, w_dr=0.10):
     rng = np.random.RandomState(seed)
 
-    # Split: 10% labeled, 90% test (matches base paper)
+    # Split: labeled vs test (matches base paper's 10% default)
     labeled_idx = []
     for cls in np.unique(target_y):
         cls_idx  = np.where(target_y == cls)[0]
@@ -168,7 +170,10 @@ def run_trial(target_name, target_X, target_y, all_projects,
                     if n != target_name}
     candidates_y = {n: y for n, (_, y) in all_projects.items()
                     if n != target_name}
-    selected = SimilaritySourceSelector(top_k=top_k).select(
+    selector = SimilaritySourceSelector(
+        top_k=top_k, w_cos=w_cos, w_mmd=w_mmd,
+        w_adist=w_adist, w_dr=w_dr)
+    selected = selector.select(
         X_tgt_lab, candidates,
         target_y=y_tgt_lab, sources_y=candidates_y)
 
@@ -183,7 +188,7 @@ def run_trial(target_name, target_X, target_y, all_projects,
     X_test_sel = fs.transform(X_test)
 
     # Stage 3: CORAL Domain Adaptation
-    coral        = CORAL(reg=1e-3)
+    coral        = CORAL(reg=coral_reg)
     X_src_ada    = coral.fit_transform(X_src_sel, X_tgt_sel)
 
     scaler   = StandardScaler()
@@ -197,12 +202,14 @@ def run_trial(target_name, target_X, target_y, all_projects,
 
     # Stage 4: SMOTE
     k_smote = max(1, min(5, np.bincount(y_train).min() - 1))
+    smote_strat = smote_strategy if smote_strategy == 'auto' else float(smote_strategy)
     X_bal, y_bal = SMOTE(
-        k_neighbors=k_smote, random_state=seed).fit_resample(X_train, y_train)
+        k_neighbors=k_smote, random_state=seed,
+        sampling_strategy=smote_strat).fit_resample(X_train, y_train)
 
     # Stage 5: Stacked Ensemble
-    n_folds = max(2, min(5, np.bincount(y_bal).min()))
-    model   = StackedEnsemble(n_folds=n_folds, random_state=seed)
+    eff_folds = max(2, min(n_folds, np.bincount(y_bal).min()))
+    model     = StackedEnsemble(n_folds=eff_folds, random_state=seed)
     model.fit(X_bal, y_bal)
 
     y_pred = model.predict(X_test_final)
@@ -220,7 +227,8 @@ def run_trial(target_name, target_X, target_y, all_projects,
 # ─────────────────────────────────────────────────────────────
 # Multi-Trial & Benchmark
 # ─────────────────────────────────────────────────────────────
-def evaluate_target(target_name, all_projects, top_k=3, n_trials=30, n_jobs=-1):
+def evaluate_target(target_name, all_projects, top_k=3, n_trials=30,
+                    n_jobs=-1, **trial_kwargs):
     """Run n_trials in parallel. n_jobs=-1 uses all CPU cores."""
     from joblib import Parallel, delayed
 
@@ -232,7 +240,8 @@ def evaluate_target(target_name, all_projects, top_k=3, n_trials=30, n_jobs=-1):
     def _safe_trial(s):
         try:
             return run_trial(target_name, target_X, target_y,
-                             all_projects, top_k=top_k, seed=s)
+                             all_projects, top_k=top_k, seed=s,
+                             **trial_kwargs)
         except Exception as e:
             print(f"    [WARN] Trial seed={s} skipped: {e}")
             return None
@@ -262,7 +271,7 @@ def evaluate_target(target_name, all_projects, top_k=3, n_trials=30, n_jobs=-1):
 
 def run_full_benchmark(data_dir, src_root=None, feature_mode='metrics',
                        top_k=3, n_trials=30, cache_dir='embeddings',
-                       graphsage_epochs=100):
+                       graphsage_epochs=100, **trial_kwargs):
     print(f"Loading projects (feature_mode='{feature_mode}') ...")
     all_projects = load_all_projects(
         data_dir, src_root, feature_mode, cache_dir, graphsage_epochs)
@@ -271,7 +280,8 @@ def run_full_benchmark(data_dir, src_root=None, feature_mode='metrics',
 
     rows = []
     for name in sorted(all_projects.keys()):
-        res = evaluate_target(name, all_projects, top_k, n_trials)
+        res = evaluate_target(name, all_projects, top_k, n_trials,
+                              **trial_kwargs)
         rows.append({'project': name, **res})
         print(f"  -> {name}: F1={res['f1_mean']:.3f} "
               f"AUC={res['auc_mean']:.3f} MCC={res['mcc_mean']:.3f}")
@@ -283,20 +293,49 @@ def run_full_benchmark(data_dir, src_root=None, feature_mode='metrics',
 # Entry Point
 # ─────────────────────────────────────────────────────────────
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--data_dir',        default='data/')
-    parser.add_argument('--src_root',        default=None,
+    parser = argparse.ArgumentParser(
+        description='Adaptive Cross-Project Defect Prediction Pipeline')
+
+    # Data / feature args
+    parser.add_argument('--data_dir',         default='data/')
+    parser.add_argument('--src_root',         default=None,
         help='Parent dir of Java source folders (needed for full/graphsage/codet5 modes)')
-    parser.add_argument('--feature_mode',    default='metrics',
-        choices=['full','metrics','metrics+graphsage','metrics+codet5'],
-        help='Feature extraction mode (default: metrics)')
-    parser.add_argument('--target',          default=None)
-    parser.add_argument('--top_k',           type=int, default=3)
-    parser.add_argument('--trials',          type=int, default=30)
-    parser.add_argument('--graphsage_epochs',type=int, default=100)
-    parser.add_argument('--cache_dir',       default='embeddings')
-    parser.add_argument('--out',             default='results.csv')
+    parser.add_argument('--feature_mode',     default='metrics',
+        choices=['full','metrics','metrics+graphsage','metrics+codet5'])
+    parser.add_argument('--target',           default=None)
+    parser.add_argument('--graphsage_epochs', type=int, default=100)
+    parser.add_argument('--cache_dir',        default='embeddings')
+    parser.add_argument('--out',              default='results.csv')
+
+    # Experiment control
+    parser.add_argument('--trials',           type=int,   default=30)
+    parser.add_argument('--top_k',            type=int,   default=3)
+    parser.add_argument('--target_label_ratio', type=float, default=0.10)
+    parser.add_argument('--n_folds',          type=int,   default=5)
+
+    # Source selection weights
+    parser.add_argument('--w_cos',            type=float, default=0.40)
+    parser.add_argument('--w_mmd',            type=float, default=0.35)
+    parser.add_argument('--w_adist',          type=float, default=0.15)
+    parser.add_argument('--w_dr',             type=float, default=0.10)
+
+    # Domain adaptation
+    parser.add_argument('--coral_reg',        type=float, default=1e-3)
+
+    # Imbalance handling
+    parser.add_argument('--smote_strategy',   default='auto',
+        help="'auto' for full balance, or float like 0.5 / 0.7")
+
     args = parser.parse_args()
+
+    trial_kwargs = dict(
+        target_label_ratio=args.target_label_ratio,
+        coral_reg=args.coral_reg,
+        smote_strategy=args.smote_strategy,
+        n_folds=args.n_folds,
+        w_cos=args.w_cos, w_mmd=args.w_mmd,
+        w_adist=args.w_adist, w_dr=args.w_dr,
+    )
 
     all_projects = load_all_projects(
         args.data_dir, args.src_root, args.feature_mode,
@@ -308,14 +347,15 @@ def main():
             print(f"ERROR: '{args.target}' not found.")
             sys.exit(1)
         res = evaluate_target(args.target, all_projects,
-                              args.top_k, args.trials)
+                              args.top_k, args.trials, **trial_kwargs)
         print(f"\nResults for {args.target}:")
         for k, v in res.items():
             print(f"  {k}: {v:.4f}" if isinstance(v, float) else f"  {k}: {v}")
     else:
         df = run_full_benchmark(
             args.data_dir, args.src_root, args.feature_mode,
-            args.top_k, args.trials, args.cache_dir, args.graphsage_epochs)
+            args.top_k, args.trials, args.cache_dir, args.graphsage_epochs,
+            **trial_kwargs)
 
         print("\n" + "="*70)
         print("RESULTS SUMMARY")
