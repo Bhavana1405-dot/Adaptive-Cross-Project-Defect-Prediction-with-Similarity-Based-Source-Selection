@@ -18,6 +18,7 @@ from sklearn.ensemble import RandomForestClassifier, HistGradientBoostingClassif
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import StratifiedKFold
 from sklearn.preprocessing import StandardScaler
+from sklearn.utils.class_weight import compute_sample_weight
 
 
 # ─────────────────────────────────────────────────────────────
@@ -165,6 +166,7 @@ class StackedEnsemble:
 
         self.meta_learner = LogisticRegression(
             C=1.0, max_iter=300, solver='lbfgs',
+            class_weight='balanced',
             random_state=random_state)
 
         self.scaler_      = StandardScaler()
@@ -201,9 +203,13 @@ class StackedEnsemble:
         for _, (train_idx, val_idx) in enumerate(skf.split(X, y)):
             X_tr, X_val = X[train_idx], X[val_idx]
             y_tr        = y[train_idx]
-            for i, (_, clf) in enumerate(self.base_learners):
+            sw_tr       = compute_sample_weight('balanced', y_tr)
+            for i, (name, clf) in enumerate(self.base_learners):
                 c = self._clone(clf)
-                c.fit(X_tr, y_tr)
+                if isinstance(c, HistGradientBoostingClassifier):
+                    c.fit(X_tr, y_tr, sample_weight=sw_tr)
+                else:
+                    c.fit(X_tr, y_tr)
                 meta_X[val_idx, i] = c.predict_proba(X_val)[:, 1]
 
         self.meta_learner.fit(meta_X, y)
@@ -213,9 +219,13 @@ class StackedEnsemble:
         self.threshold_ = self._find_best_threshold(meta_probs, y)
 
         self._fitted_base = []
+        sw_full = compute_sample_weight('balanced', y)
         for _, clf in self.base_learners:
             c = self._clone(clf)
-            c.fit(X, y)
+            if isinstance(c, HistGradientBoostingClassifier):
+                c.fit(X, y, sample_weight=sw_full)
+            else:
+                c.fit(X, y)
             self._fitted_base.append(c)
 
         return self
