@@ -58,8 +58,8 @@ class TorchMLP:
                 nn.LayerNorm(self.hidden_dim // 2),
                 nn.ReLU(),
                 nn.Dropout(0.2),
-                nn.Linear(self.hidden_dim // 2, 1),
-                nn.Sigmoid()
+                nn.Linear(self.hidden_dim // 2, 1)
+                # No Sigmoid — BCEWithLogitsLoss applies it internally
             ).to(device)
             return model, device, torch
         except ImportError:
@@ -83,7 +83,7 @@ class TorchMLP:
         pos_weight = torch.tensor(
             [(y == 0).sum() / max((y == 1).sum(), 1)],
             dtype=torch.float32).to(device)
-        criterion  = nn.BCELoss()
+        criterion  = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
         optimizer  = torch.optim.Adam(model.parameters(), lr=self.lr,
                                       weight_decay=1e-4)
         scheduler  = torch.optim.lr_scheduler.StepLR(
@@ -117,7 +117,8 @@ class TorchMLP:
         self.model_.eval()
         with torch.no_grad():
             X_t   = torch.FloatTensor(X).to(self.device_)
-            probs = self.model_(X_t).cpu().numpy().flatten()
+            logits = self.model_(X_t)
+            probs  = torch.sigmoid(logits).cpu().numpy().flatten()
         return np.column_stack([1 - probs, probs])
 
     def get_params(self, deep=True):
@@ -149,8 +150,8 @@ class StackedEnsemble:
 
         self.base_learners = [
             ('rf',   RandomForestClassifier(
-                         n_estimators=100, max_depth=8,
-                         class_weight='balanced',
+                         n_estimators=150, max_depth=None,
+                         class_weight='balanced_subsample',
                          n_jobs=-1, random_state=random_state)),
             ('hgb1', HistGradientBoostingClassifier(
                          max_iter=100, learning_rate=0.05,
@@ -207,6 +208,10 @@ class StackedEnsemble:
 
         self.meta_learner.fit(meta_X, y)
 
+        # Find optimal threshold on OOF predictions instead of using 0.5
+        meta_probs = self.meta_learner.predict_proba(meta_X)[:, 1]
+        self.threshold_ = self._find_best_threshold(meta_probs, y)
+
         self._fitted_base = []
         for _, clf in self.base_learners:
             c = self._clone(clf)
@@ -227,7 +232,22 @@ class StackedEnsemble:
         return self.meta_learner.predict_proba(meta_X)
 
     def predict(self, X):
-        return (self.predict_proba(X)[:, 1] >= 0.5).astype(int)
+        threshold = getattr(self, 'threshold_', 0.5)
+        return (self.predict_proba(X)[:, 1] >= threshold).astype(int)
+
+    @staticmethod
+    def _find_best_threshold(y_prob, y_true, beta=1.0):
+        from sklearn.metrics import f1_score
+        best_t, best_f = 0.5, 0.0
+        for t in np.arange(0.1, 0.90, 0.02):
+            y_pred = (y_prob >= t).astype(int)
+            if y_pred.sum() == 0:
+                continue
+            f = f1_score(y_true, y_pred, zero_division=0)
+            if f > best_f:
+                best_f = f
+                best_t = t
+        return float(best_t)
 
     # ─────────────────────────────
     # Helper
