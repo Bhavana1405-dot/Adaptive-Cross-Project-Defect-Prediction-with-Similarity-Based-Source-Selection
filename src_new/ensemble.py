@@ -7,10 +7,11 @@ On Windows with NVIDIA GPU, uses a PyTorch MLP as one base learner
 Base learners:
   - RandomForest          (sklearn, all CPU cores)
   - HistGradientBoosting  (sklearn fast histogram impl, x2 versions)
+  - XGBoost               (gradient boosting with scale_pos_weight)
   - MLP                   (PyTorch — uses GPU if available, else CPU)
 
 Meta-learner:
-  - LogisticRegression (OOF stacking, no data leakage)
+  - LogisticRegression (OOF stacking, class_weight='balanced')
 """
 
 import numpy as np
@@ -19,6 +20,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import StratifiedKFold
 from sklearn.preprocessing import StandardScaler
 from sklearn.utils.class_weight import compute_sample_weight
+from xgboost import XGBClassifier
 
 
 # ─────────────────────────────────────────────────────────────
@@ -160,6 +162,12 @@ class StackedEnsemble:
             ('hgb2', HistGradientBoostingClassifier(
                          max_iter=100, learning_rate=0.1,
                          max_depth=3, random_state=random_state)),
+            ('xgb',  XGBClassifier(
+                         n_estimators=150, max_depth=5,
+                         learning_rate=0.1, subsample=0.8,
+                         colsample_bytree=0.8, use_label_encoder=False,
+                         eval_metric='logloss', verbosity=0,
+                         n_jobs=-1, random_state=random_state)),
             ('mlp',  TorchMLP(hidden_dim=128, epochs=50,
                                random_state=random_state)),
         ]
@@ -204,10 +212,14 @@ class StackedEnsemble:
             X_tr, X_val = X[train_idx], X[val_idx]
             y_tr        = y[train_idx]
             sw_tr       = compute_sample_weight('balanced', y_tr)
+            spw         = max((y_tr == 0).sum(), 1) / max((y_tr == 1).sum(), 1)
             for i, (name, clf) in enumerate(self.base_learners):
                 c = self._clone(clf)
                 if isinstance(c, HistGradientBoostingClassifier):
                     c.fit(X_tr, y_tr, sample_weight=sw_tr)
+                elif isinstance(c, XGBClassifier):
+                    c.set_params(scale_pos_weight=spw)
+                    c.fit(X_tr, y_tr)
                 else:
                     c.fit(X_tr, y_tr)
                 meta_X[val_idx, i] = c.predict_proba(X_val)[:, 1]
@@ -220,10 +232,14 @@ class StackedEnsemble:
 
         self._fitted_base = []
         sw_full = compute_sample_weight('balanced', y)
+        spw_full = max((y == 0).sum(), 1) / max((y == 1).sum(), 1)
         for _, clf in self.base_learners:
             c = self._clone(clf)
             if isinstance(c, HistGradientBoostingClassifier):
                 c.fit(X, y, sample_weight=sw_full)
+            elif isinstance(c, XGBClassifier):
+                c.set_params(scale_pos_weight=spw_full)
+                c.fit(X, y)
             else:
                 c.fit(X, y)
             self._fitted_base.append(c)
@@ -281,4 +297,6 @@ class StackedEnsemble:
     def _clone(clf):
         if isinstance(clf, TorchMLP):
             return TorchMLP(**clf.get_params())
+        if isinstance(clf, XGBClassifier):
+            return XGBClassifier(**clf.get_params())
         return clf.__class__(**clf.get_params())
